@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Составы игроков — 12×12</title>
+<style>
+  :root{
+    --bg:#0e0f13;
+    --text:#e6e7ec;
+    --muted:#a7adbf;
+    --accent:#5aa7ff;
+    --green:#2fbf71;   /* good */
+    --red:#ff5f6d;     /* low  */
+    --orange:#f39c12;  /* full */
+    --line:#3a3f52;
+    --chip:#22273a;
+    --chip-text:#cfd6ea;
+
+    /* Геометрия равной высоты карточек слева/справа */
+    --slot-h:28px;
+    --slot-gap:6px;
+    --rows-left:7;   /* слева максимум 7 слотов (визуально одинаковая высота) */
+    --rows-right:6;  /* справа 6 слотов */
+    --card-header-h:36px;
+    --card-pad-y:12px; --card-pad-x:12px;
+
+    --card-h-left:  calc(var(--card-header-h) + var(--card-pad-y)*2 + var(--rows-left)*var(--slot-h)  + (var(--rows-left)-1)*var(--slot-gap));
+    --card-h-right: calc(var(--card-header-h) + var(--card-pad-y)*2 + var(--rows-right)*var(--slot-h) + (var(--rows-right)-1)*var(--slot-gap));
+    --card-h: max(var(--card-h-left), var(--card-h-right));
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.35 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Noto Sans", "Helvetica Neue", Arial;overflow:hidden;}
+
+  .header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line);}
+  .hint{color:var(--muted);font-size:12px}
+
+  .wrap{height:calc(100% - 50px);display:grid;grid-template-columns: 1fr 2px 1fr 260px;gap:14px;padding:14px;}
+  .divider{border-left:2px dashed var(--line);}
+
+  .grid{display:grid;grid-template-columns: repeat(4, minmax(220px, 1fr));row-gap:100px;column-gap:12px;align-content:start;overflow:auto;padding-right:2px;}
+
+  .card{
+    border:2px solid transparent;border-radius:12px;
+    padding: var(--card-pad-y) var(--card-pad-x);
+    display:flex;flex-direction:column;gap:8px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+    height:var(--card-h);min-height:var(--card-h);
+  }
+  /* Цвета:
+     слева: 7 — оранжевый, 6 — зелёный, ≤5 — красный
+     справа: 6 — зелёный, <6 — красный
+  */
+  .card[data-state="full"]{border-color:var(--orange);}
+  .card[data-state="good"]{border-color:var(--green);}
+  .card[data-state="low"] {border-color:var(--red);}
+
+  .card-header{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:var(--card-header-h);}
+  .card-title{display:flex;align-items:center;gap:8px;min-width:0;}
+  .title-text{font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
+  .title-input{display:none;width:220px;max-width:42vw;background:#0d0f16;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:4px 6px;outline:none;}
+
+  .count-wrap{display:flex;align-items:center;gap:6px}
+  .count-badge{background:var(--chip);color:var(--chip-text);padding:2px 6px;border-radius:999px;font-weight:700;font-size:12px;line-height:1;min-width:24px;text-align:center;}
+  .icon-btn{border:none;background:transparent;cursor:pointer;color:#ff8088;font-size:16px;line-height:1;}
+  .add-btn{border:none;background:transparent;cursor:pointer;color:#8fb6ff;font-size:18px;line-height:1;}
+
+  .players{display:flex;flex-direction:column;gap:var(--slot-gap);flex:1;min-height:0;}
+  .slot{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px dashed rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);border-radius:10px;height:var(--slot-h);padding:4px 8px;}
+  .slot.empty .hint{color:var(--muted);font-size:12px}
+  .slot.droppable{outline:1px dashed transparent;transition:outline-color .15s ease}
+  .slot.droppable.drag-over{outline-color:var(--accent)}
+
+  .player{display:flex;align-items:center;gap:8px;min-width:0;cursor:grab;flex:1}
+  .player:active{cursor:grabbing}
+  .avatar{width:18px;height:18px;border-radius:50%;background:linear-gradient(135deg,#3a7bd5,#00d2ff);}
+  .name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;}
+  .name-input{display:none;flex:1;background:#0d0f16;border:1px solid var(--line);color:#fff;border-radius:6px;padding:2px 6px;outline:none;height:22px;}
+  .row-btn{border:none;background:transparent;color:#ff8088;cursor:pointer;font-size:16px;line-height:1;}
+
+  /* Запасные */
+  .bench{
+    border:1px solid var(--line);border-radius:12px;padding:10px;
+    display:flex;flex-direction:column;gap:10px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+    min-width:240px;
+  }
+  .bench-header{display:flex;align-items:center;justify-content:space-between;}
+  .bench-list{display:flex;flex-direction:column;gap:8px;overflow:auto;}
+  .bench-item{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);border-radius:10px;padding:6px 8px;}
+  
+  /* Индикатор синхронизации */
+  .sync-indicator {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    padding: 5px 10px;
+    border-radius: 15px;
+    font-size: 12px;
+    background: var(--chip);
+    color: var(--chip-text);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .sync-indicator.syncing::before {
+    content: "🔄";
+    animation: spin 1s linear infinite;
+  }
+  .sync-indicator.connected::before {
+    content: "✅";
+  }
+  .sync-indicator.error::before {
+    content: "❌";
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+</style>
+<!-- Добавляем Pusher -->
+<script src="https://js.pusher.com/7.0/pusher.min.js"></script>
+</head>
+<body>
+  <div class="header">
+    <div class="title">Составы игроков</div>
+    <div class="hint">Слева максимум 7 (по умолчанию 6). ✕ слева — удалить, ✕ справа — вернуть «домой» (влево или в запас).</div>
+  </div>
+
+  <div class="wrap">
+    <section id="leftGrid" class="grid" aria-label="Левые таблицы"></section>
+    <div class="divider" aria-hidden="true"></div>
+    <section id="rightGrid" class="grid" aria-label="Правые таблицы"></section>
+
+    <aside class="bench" aria-label="Запасные">
+      <div class="bench-header">
+        <div class="title-text">Запасные</div>
+        <div class="count-wrap">
+          <span id="benchCount" class="count-badge">0</span>
+          <button id="benchAdd" class="add-btn" title="Добавить запасного">+</button>
+        </div>
+      </div>
+      <div id="benchList" class="bench-list"></div>
+    </aside>
+  </div>
+
+  <div id="syncIndicator" class="sync-indicator">Подключение...</div>
+
+<script>
+(function(){
+  const LEFT_TABLES=12, RIGHT_TABLES=12, LEFT_SLOTS=7, RIGHT_SLOTS=6;
+  const CHANNEL_NAME = 'tables-channel';
+  const EVENT_NAME = 'state-update';
+
+  // Pusher конфигурация
+  const PUSHER_APP_ID = "2047105";
+  const PUSHER_KEY = "6ead994314cfeaa97dc6";
+  const PUSHER_CLUSTER = "eu";
+
+  const state = {
+    tablesLeft:  [],
+    tablesRight: [],
+    players:     {},
+    bench:       []
+  };
+
+  let pusher = null;
+  let channel = null;
+  let isUpdatingFromServer = false;
+  let sessionId = Math.random().toString(36).substring(2, 15);
+
+  const leftGrid   = document.getElementById('leftGrid');
+  const rightGrid  = document.getElementById('rightGrid');
+  const benchList  = document.getElementById('benchList');
+  const benchCount = document.getElementById('benchCount');
+  const benchAdd   = document.getElementById('benchAdd');
+  const syncIndicator = document.getElementById('syncIndicator');
+
+  const el = (tag, attrs={}, ...children)=>{
+    const n = document.createElement(tag);
+    for(const [k,v] of Object.entries(attrs||{})){
+      if(k==='class') n.className = v;
+      else if(k==='dataset') Object.assign(n.dataset, v);
+      else if(k==='html') n.innerHTML = v;
+      else if(k.startsWith('on') && typeof v==='function') n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v);
+    }
+    for(const c of children){ if(c==null) continue; n.appendChild(typeof c==='string' ? document.createTextNode(c) : c); }
+    return n;
+  };
+
+  // Функции для работы с Pusher
+  function initPusher() {
+    try {
+      pusher = new Pusher(PUSHER_KEY, {
+        cluster: PUSHER_CLUSTER,
+        enabledTransports: ['ws', 'wss']
+      });
+      
+      channel = pusher.subscribe(CHANNEL_NAME);
+      
+      channel.bind(EVENT_NAME, function(data) {
+        if (data.sessionId !== sessionId && data.state) {
+          updateSyncStatus('syncing', 'Обновление...');
+          isUpdatingFromServer = true;
+          Object.assign(state, data.state);
+          render();
+          setTimeout(() => updateSyncStatus('connected', ''), 1000);
+          isUpdatingFromServer = false;
+        }
+      });
+      
+      channel.bind('pusher:subscription_succeeded', function() {
+        updateSyncStatus('connected', 'Подключено');
+        setTimeout(() => updateSyncStatus('connected', ''), 2000);
+      });
+      
+      channel.bind('pusher:subscription_error', function() {
+        updateSyncStatus('error', 'Ошибка подключения');
+      });
+      
+    } catch (error) {
+      console.error('Pusher error:', error);
+      updateSyncStatus('error', 'Ошибка Pusher');
+    }
+  }
+
+  function updateSyncStatus(status, message = '') {
+    syncIndicator.className = 'sync-indicator ' + status;
+    if (message) {
+      syncIndicator.textContent = message;
+    }
+  }
+
+  function broadcastState() {
+    if (isUpdatingFromServer) return;
+    
+    try {
+      if (channel && pusher.connection.state === 'connected') {
+        channel.trigger('client-' + EVENT_NAME, {
+          state: state,
+          sessionId: sessionId,
+          timestamp: Date.now()
+        });
+      }
+    } catch (error) {
+      console.error('Broadcast error:', error);
+    }
+  }
+
+  const leftCardState  = (c)=> c===7 ? 'full' : (c===6 ? 'good' : 'low');
+  const rightCardState = (c)=> c===6 ? 'good' : 'low';
+
+  function newPlayerId(){
+    let n = Object.keys(state.players).length + 1;
+    while(state.players['P'+n]) n++;
+    return 'P'+n;
+  }
+
+  function init(){
+    for(let i=1;i<=LEFT_TABLES;i++)  state.tablesLeft.push({id:'L'+i, title:'Таблица '+i, slots:new Array(LEFT_SLOTS).fill(null)});
+    for(let i=1;i<=RIGHT_TABLES;i++) state.tablesRight.push({id:'R'+i, title:'Группа '+i,  slots:new Array(RIGHT_SLOTS).fill(null)});
+
+    // Слева по умолчанию 6 игроков (возможность добавить 7-го)
+    let pid = 1;
+    for(const lt of state.tablesLeft){
+      for(let s=0;s<6;s++){
+        const id = 'P'+pid++;
+        state.players[id] = { id, name:'Игрок '+(id.slice(1)), home:{type:'left', tableId:lt.id, slotIndex:s}, current:{type:'left', tableId:lt.id, slotIndex:s} };
+        lt.slots[s] = {playerId:id};
+      }
+    }
+    // Пара запасных
+    for(let i=0;i<6;i++){
+      const id = newPlayerId();
+      state.players[id] = { id, name:'Игрок '+id.slice(1), home:{type:'bench'}, current:{type:'bench'} };
+      state.bench.push(id);
+    }
+    
+    // Инициализируем Pusher после загрузки состояния
+    initPusher();
+  }
+
+  function render(){
+    leftGrid.innerHTML=''; rightGrid.innerHTML='';
+    state.tablesLeft.forEach(t => leftGrid.appendChild(renderCard(t,'left', LEFT_SLOTS)));
+    state.tablesRight.forEach(t=> rightGrid.appendChild(renderCard(t,'right',RIGHT_SLOTS)));
+    renderBench();
+  }
+
+  function renderCard(table, side, maxSlots){
+    const count = table.slots.filter(Boolean).length;
+    const card  = el('div',{class:'card', dataset:{id:table.id}});
+    card.setAttribute('data-state', side==='left' ? leftCardState(count) : rightCardState(count));
+
+    const titleText  = el('div',{class:'title-text', title:'Изменить название'}, table.title);
+    const titleInput = el('input',{class:'title-input', type:'text', value:table.title, maxlength:'40'});
+    titleText.addEventListener('click', ()=>{ titleText.style.display='none'; titleInput.style.display='inline-block'; titleInput.focus(); titleInput.select(); });
+    const commitTitle = ()=>{ 
+      const v=(titleInput.value||'').trim(); 
+      if(v){ 
+        table.title=v; 
+        titleText.textContent=v; 
+        broadcastState();
+      } 
+      titleInput.style.display='none'; 
+      titleText.style.display='inline'; 
+    };
+    titleInput.addEventListener('keydown', e=>{ if(e.key==='Enter') commitTitle(); });
+    titleInput.addEventListener('blur', commitTitle);
+
+    const countBadge = el('span',{class:'count-badge'}, String(count));
+    const resetBtn   = el('button',{class:'icon-btn', title: side==='left'?'Вернуть всех «домашних» сюда':'Вернуть всех на исходные'}, '✕');
+    resetBtn.addEventListener('click', ()=> side==='left' ? resetLeftTable(table.id) : resetRightTable(table.id) );
+
+    const addBtn = side==='left' ? el('button',{class:'add-btn', title:'Добавить игрока'}, '+') : null;
+    if(addBtn) addBtn.addEventListener('click', ()=>addPlayerToLeft(table.id));
+
+    const header = el('div',{class:'card-header'},
+      el('div',{class:'card-title'}, titleText, titleInput),
+      el('div',{class:'count-wrap'}, ...(addBtn?[addBtn]:[]), countBadge, resetBtn)
+    );
+    card.appendChild(header);
+
+    const list = el('div',{class:'players'});
+    for(let i=0;i<maxSlots;i++){
+      const s = table.slots[i];
+      const slot = el('div',{class:'slot droppable '+(!s?'empty':''), dataset:{slotIndex:i}});
+      slot.addEventListener('dragover', onDragOver);
+      slot.addEventListener('dragleave', onDragLeave);
+      slot.addEventListener('drop', (e)=> side==='left' ? onDropLeft(e, table.id, i) : onDropRight(e, table.id, i));
+      if(s){
+        const p = state.players[s.playerId];
+        slot.classList.remove('empty');
+        slot.appendChild(renderPlayerRow(p, side, table.id, i));
+      }else{
+        slot.appendChild(el('div',{class:'hint'}, 'Свободно'));
+      }
+      list.appendChild(slot);
+    }
+    card.appendChild(list);
+    return card;
+  }
+
+  function renderPlayerRow(player, side, tableId, slotIndex){
+    const row = el('div',{class:'player', draggable:true, dataset:{playerId:player.id}});
+    row.addEventListener('dragstart', onDragStart);
+    row.addEventListener('dragend', onDragEnd);
+
+    const avatar = el('div',{class:'avatar'});
+    const name   = el('div',{class:'name', title:'Изменить имя'}, player.name);
+    const nameInput = el('input',{class:'name-input', type:'text', value:player.name, maxlength:'40'});
+    name.addEventListener('click', ()=>{ name.style.display='none'; nameInput.style.display='inline-block'; nameInput.value = player.name; nameInput.focus(); nameInput.select(); });
+    const commitName = ()=>{ 
+      const v=(nameInput.value||'').trim(); 
+      if(v){ 
+        player.name=v; 
+        name.textContent=v; 
+        broadcastState();
+      } 
+      nameInput.style.display='none'; 
+      name.style.display='inline'; 
+    };
+    nameInput.addEventListener('keydown', e=>{ if(e.key==='Enter') commitName(); });
+    nameInput.addEventListener('blur', commitName);
+
+    row.appendChild(avatar);
+    row.appendChild(name);
+    row.appendChild(nameInput);
+
+    if(side==='left'){
+      const del = el('button',{class:'row-btn', title:'Удалить игрока'}, '✕');
+      del.addEventListener('click', ()=>{
+        const lt = state.tablesLeft.find(t=>t.id===tableId);
+        if(!lt) return;
+        if(lt.slots[slotIndex]?.playerId === player.id){
+          lt.slots[slotIndex]=null;
+          delete state.players[player.id];
+          state.tablesRight.forEach(rt=>{ for(let i=0;i<rt.slots.length;i++){ if(rt.slots[i]?.playerId===player.id) rt.slots[i]=null; } });
+          broadcastState();
+          render();
+        }
+      });
+      row.appendChild(del);
+    }
+
+    if(side==='right'){
+      const back = el('button',{class:'row-btn', title:'Вернуть на исходное место'}, '✕');
+      back.addEventListener('click', ()=>{
+        const rt = state.tablesRight.find(t=>t.id===tableId);
+        if(rt && rt.slots[slotIndex]?.playerId===player.id) rt.slots[slotIndex]=null;
+
+        if(player.home?.type==='bench'){
+          if(!state.bench.includes(player.id)) state.bench.push(player.id);
+          player.current = {type:'bench'};
+        }else{
+          const lt = state.tablesLeft.find(t=>t.id===player.home?.tableId);
+          if(lt){
+            let idx = typeof player.home.slotIndex==='number' ? player.home.slotIndex : lt.slots.findIndex(x=>!x);
+            if(idx===-1) idx = 0;
+            lt.slots[idx] = {playerId:player.id};
+            player.current = {type:'left', tableId:lt.id, slotIndex:idx};
+            if(typeof player.home.slotIndex!=='number') player.home.slotIndex=idx;
+          }
+        }
+        broadcastState();
+        render();
+      });
+      row.appendChild(back);
+    }
+
+    return row;
+  }
+
+  function renderBench(){
+    benchList.innerHTML='';
+    state.bench.forEach(id=>{
+      const p = state.players[id];
+      if(!p) return;
+      const item = el('div',{class:'bench-item'});
+      const drag = el('div',{class:'player', draggable:true, dataset:{playerId:id}});
+      drag.addEventListener('dragstart', onDragStart);
+      drag.addEventListener('dragend', onDragEnd);
+      drag.appendChild(el('div',{class:'avatar'}));
+      const nm = el('div',{class:'name', title:'Изменить имя'}, p.name);
+      const nmInput = el('input',{class:'name-input', type:'text', value:p.name, maxlength:'40'});
+      nm.addEventListener('click', ()=>{ nm.style.display='none'; nmInput.style.display='inline-block'; nmInput.value=p.name; nmInput.focus(); nmInput.select(); });
+      const commitNm = ()=>{ 
+        const v=(nmInput.value||'').trim(); 
+        if(v){ 
+          p.name=v; 
+          nm.textContent=v; 
+          broadcastState();
+        } 
+        nmInput.style.display='none'; 
+        nm.style.display='inline'; 
+      };
+      nmInput.addEventListener('keydown', e=>{ if(e.key==='Enter') commitNm(); });
+      nmInput.addEventListener('blur', commitNm);
+      drag.appendChild(nm); drag.appendChild(nmInput);
+
+      const del = el('button',{class:'row-btn', title:'Удалить игрока'}, '✕');
+      del.addEventListener('click', ()=>{ state.bench = state.bench.filter(x=>x!==id); delete state.players[id]; broadcastState(); render(); });
+
+      item.appendChild(drag);
+      item.appendChild(del);
+      benchList.appendChild(item);
+    });
+    benchCount.textContent = String(state.bench.length);
+
+    benchAdd.onclick = ()=>{
+      const id = newPlayerId();
+      state.players[id] = { id, name:'Игрок '+id.slice(1), home:{type:'bench'}, current:{type:'bench'} };
+      state.bench.push(id);
+      broadcastState();
+      render();
+    };
+  }
+
+  function addPlayerToLeft(tableId){
+    const lt = state.tablesLeft.find(t=>t.id===tableId);
+    if(!lt) return;
+    const count = lt.slots.filter(Boolean).length;
+    if(count >= LEFT_SLOTS) return;
+    const freeIdx = lt.slots.findIndex(s=>!s);
+    if(freeIdx===-1) return;
+    const id = newPlayerId();
+    state.players[id] = { id, name:'Игрок '+id.slice(1), home:{type:'left', tableId:lt.id, slotIndex:freeIdx}, current:{type:'left', tableId:lt.id, slotIndex:freeIdx} };
+    lt.slots[freeIdx] = {playerId:id};
+    broadcastState();
+    render();
+  }
+
+  function resetLeftTable(tableId){
+    const lt = state.tablesLeft.find(t=>t.id===tableId);
+    if(!lt) return;
+    for(let i=0;i<LEFT_SLOTS;i++) lt.slots[i]=null;
+
+    Object.values(state.players).forEach(p=>{
+      if(p.home?.type==='left' && p.home.tableId===tableId){
+        if(p.current?.type==='right'){
+          const rt = state.tablesRight.find(t=>t.id===p.current.tableId);
+          if(rt && Number.isInteger(p.current.slotIndex)) rt.slots[p.current.slotIndex]=null;
+        }else if(p.current?.type==='bench'){
+          state.bench = state.bench.filter(x=>x!==p.id);
+        }else if(p.current?.type==='left' && p.current.tableId!==tableId){
+          const lt2 = state.tablesLeft.find(t=>t.id===p.current.tableId);
+          if(lt2 && Number.isInteger(p.current.slotIndex)) lt2.slots[p.current.slotIndex]=null;
+        }
+        const i = typeof p.home.slotIndex==='number' ? p.home.slotIndex : lt.slots.findIndex(x=>!x);
+        if(i>=0){
+          lt.slots[i] = {playerId:p.id};
+          p.current = {type:'left', tableId, slotIndex:i};
+          if(typeof p.home.slotIndex!=='number') p.home.slotIndex=i;
+        }
+      }
+    });
+    broadcastState();
+    render();
+  }
+
+  function resetRightTable(tableId){
+    const rt = state.tablesRight.find(t=>t.id===tableId);
+    if(!rt) return;
+    for(let i=0;i<RIGHT_SLOTS;i++){
+      const s = rt.slots[i];
+      if(!s) continue;
+      const p = state.players[s.playerId];
+      rt.slots[i]=null;
+      if(!p) continue;
+      if(p.home?.type==='bench'){
+        if(!state.bench.includes(p.id)) state.bench.push(p.id);
+        p.current = {type:'bench'};
+      }else{
+        const lt = state.tablesLeft.find(t=>t.id===p.home?.tableId);
+        if(lt){
+          let idx = typeof p.home.slotIndex==='number' ? p.home.slotIndex : lt.slots.findIndex(x=>!x);
+          if(idx===-1) idx = 0;
+          lt.slots[idx] = {playerId:p.id};
+          p.current = {type:'left', tableId:lt.id, slotIndex:idx};
+          if(typeof p.home.slotIndex!=='number') p.home.slotIndex=idx;
+        }
+      }
+    }
+    broadcastState();
+    render();
+  }
+
+  let draggedPlayerId = null;
+  function onDragStart(e){ const pid=e.currentTarget.dataset.playerId; draggedPlayerId=pid; e.dataTransfer.setData('text/plain', pid); e.dataTransfer.effectAllowed='move'; }
+  function onDragEnd(){ draggedPlayerId=null; document.querySelectorAll('.drag-over').forEach(x=>x.classList.remove('drag-over')); }
+  function onDragOver(e){ e.preventDefault(); e.currentTarget.classList.add('drag-over'); e.dataTransfer.dropEffect='move'; }
+  function onDragLeave(e){ e.currentTarget.classList.remove('drag-over'); }
+
+  function freeCurrent(player){
+    if(player.current?.type==='left'){
+      const lt = state.tablesLeft.find(t=>t.id===player.current.tableId);
+      if(lt && lt.slots[player.current.slotIndex]?.playerId===player.id) lt.slots[player.current.slotIndex]=null;
+    }else if(player.current?.type==='right'){
+      const rt = state.tablesRight.find(t=>t.id===player.current.tableId);
+      if(rt && rt.slots[player.current.slotIndex]?.playerId===player.id) rt.slots[player.current.slotIndex]=null;
+    }else if(player.current?.type==='bench'){
+      state.bench = state.bench.filter(x=>x!==player.id);
+    }
+  }
+
+  function onDropLeft(e, tableId, slotIndex){
+    e.preventDefault(); e.currentTarget.classList.remove('drag-over');
+    const pid = draggedPlayerId || e.dataTransfer.getData('text/plain'); const player = state.players[pid]; if(!player) return;
+    const lt = state.tablesLeft.find(t=>t.id===tableId); if(!lt) return;
+    if(lt.slots[slotIndex]) return;
+    const count = lt.slots.filter(Boolean).length; if(count >= LEFT_SLOTS) return;
+    freeCurrent(player);
+    lt.slots[slotIndex] = {playerId:player.id};
+    player.current = {type:'left', tableId, slotIndex};
+    if(!player.home || !player.home.tableId) player.home = {type:'left', tableId, slotIndex};
+    broadcastState();
+    render();
+  }
+
+  function onDropRight(e, tableId, slotIndex){
+    e.preventDefault(); e.currentTarget.classList.remove('drag-over');
+    const pid = draggedPlayerId || e.dataTransfer.getData('text/plain'); const player = state.players[pid]; if(!player) return;
+    const rt = state.tablesRight.find(t=>t.id===tableId); if(!rt || rt.slots[slotIndex]) return;
+    freeCurrent(player);
+    rt.slots[slotIndex] = {playerId:player.id};
+    player.current = {type:'right', tableId, slotIndex};
+    broadcastState();
+    render();
+  }
+
+  benchList.addEventListener('dragover', onDragOver);
+  benchList.addEventListener('dragleave', onDragLeave);
+  benchList.addEventListener('drop', (e)=>{
+    e.preventDefault(); e.currentTarget.classList.remove('drag-over');
+    const pid = draggedPlayerId || e.dataTransfer.getData('text/plain'); const p = state.players[pid]; if(!p) return;
+    if(p.current?.type==='left') return;
+    if(p.current?.type==='bench') return;
+    freeCurrent(p);
+    if(!state.bench.includes(p.id)) state.bench.push(p.id);
+    p.current = {type:'bench'};
+    broadcastState();
+    render();
+  });
+
+  init();
+  render();
+})();
+</script>
+</body>
+</html>
